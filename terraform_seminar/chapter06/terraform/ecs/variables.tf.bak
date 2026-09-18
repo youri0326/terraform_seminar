@@ -1,0 +1,25 @@
+variable "public_subnet_a_id" { type = string }
+variable "private_subnet_ids" { type = list(string) }
+variable "ecs_php_sg_id" {
+  type        = string
+  description = "Security Group ID for ECS PHP task"
+}
+
+variable "ecs_phpmyadmin_sg_id" {
+  type        = string
+  description = "Security Group ID for ECS phpMyAdmin task"
+}
+
+variable "target_group_arn" { type = string }
+variable "execution_role_arn" { type = string }
+variable "db_host" { type = string }
+variable "db_name" { type = string }
+variable "db_username" { type = string }
+variable "db_password" { type = string }
+variable "project_prefix" {
+  type = string
+}
+variable "aws_region" {
+  type        = string
+  description = "AWS Region"
+}

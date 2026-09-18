@@ -1,0 +1,67 @@
+#!/bin/bash
+dnf update -y
+# Apache, PHP, PDO MySQLドライバ, PHP用拡張モジュールをインストール
+dnf install httpd php php-mysqlnd php-mbstring php-xml php-json mariadb105 wget tar -y
+
+systemctl enable httpd
+systemctl start httpd
+
+# ------------------------------------------------------------------------------
+# 1. phpMyAdmin のダウンロードと配置
+# ------------------------------------------------------------------------------
+cd /var/www/html
+# 最新版のphpMyAdminをダウンロードして解凍
+wget https://www.phpmyadmin.net/downloads/phpMyAdmin-latest-all-languages.tar.gz
+tar -xvf phpMyAdmin-5.2.2-all-languages.tar.gz
+mv phpMyAdmin-*-all-languages phpmyadmin
+rm -f phpMyAdmin-latest-all-languages.tar.gz
+
+# ------------------------------------------------------------------------------
+# 2. phpMyAdmin の自動接続設定 (config.inc.php)
+# ------------------------------------------------------------------------------
+# サンプル設定ファイルをコピーして、RDSのエンドポイントを書き換える
+cp /var/www/html/phpmyadmin/config.sample.inc.php /var/www/html/phpmyadmin/config.inc.php
+
+# 接続先ホストをローカルホストからRDSのアドレスへ変更
+sed -i "s/\$cfg\['Servers'\]\[\$i\]\['host'\] = 'localhost';/\$cfg\['Servers'\]\[\$i\]\['host'\] = '${db_host}';/g" /var/www/html/phpmyadmin/config.inc.php
+
+# blowfish_secret (暗号化キー) にランダム文字列を設定
+sed -i "s/\$cfg\['blowfish_secret'\] = '';/\$cfg\['blowfish_secret'\] = 'a8b9c7d6e5f4g3h2i1j0k9l8m7n6o5p4';/g" /var/www/html/phpmyadmin/config.inc.php
+
+# パーミッション設定
+chown -R apache:apache /var/www/html/phpmyadmin
+
+# ------------------------------------------------------------------------------
+# 3. Webアプリ (index.php) の配置
+# ------------------------------------------------------------------------------
+cat <<HTML > /var/www/html/index.php
+<?php
+\$host = '${db_host}';
+\$db   = '${db_name}';
+\$user = '${db_user}';
+\$pass = '${db_pass}';
+
+echo "<h1>Web Application Status</h1>";
+
+try {
+    \$pdo = new PDO("mysql:host=\$host;dbname=\$db;charset=utf8", \$user, \$pass);
+    echo "<p style='color: green;'><strong>✓ DB接続成功！</strong></p>";
+    
+    // テーブルが存在すればデータを取得して表示
+    \$stmt = \$pdo->query("SHOW TABLES LIKE 'users'");
+    if (\$stmt->rowCount() > 0) {
+        echo "<h3>Users List:</h3>";
+        \$users = \$pdo->query("SELECT * FROM users");
+        while (\$row = \$users->fetch(PDO::FETCH_ASSOC)) {
+            echo \$row['id'] . ": " . \$row['name'] . " (" . \$row['email'] . ")<br>";
+        }
+    } else {
+        echo "<p>※まだテーブルが存在しません。phpMyAdminから 'users' テーブルを作成してください。</p>";
+    }
+} catch (PDOException \$e) {
+    echo "<p style='color: red;'><strong>✗ DB接続失敗:</strong> " . \$e->getMessage() . "</p>";
+}
+
+echo "<hr>";
+echo "<p><a href='/phpmyadmin/' target='_blank'>phpMyAdminにログインしてデータを管理する</a></p>";
+HTML

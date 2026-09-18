@@ -1,0 +1,176 @@
+# ------------------------------------------------------------------------------
+# デフォルトVPC取得
+# ------------------------------------------------------------------------------
+
+data "aws_vpc" "default" {
+  default = true
+}
+
+# ------------------------------------------------------------------------------
+# デフォルトサブネット取得
+# ------------------------------------------------------------------------------
+
+data "aws_subnets" "default" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.default.id]
+  }
+}
+
+# ------------------------------------------------------------------------------
+# Amazon Linux2023取得
+# ------------------------------------------------------------------------------
+
+data "aws_ami" "amazonlinux" {
+  owners      = ["amazon"]
+  most_recent = true
+
+  filter {
+    name   = "name"
+    values = ["al2023-ami-*-x86_64"]
+  }
+}
+
+# ------------------------------------------------------------------------------
+# SecurityGroup
+# ------------------------------------------------------------------------------
+
+# Web用セキュリティグループ
+resource "aws_security_group" "web" {
+  name        = "web-sg-${var.project_prefix}"
+  description = "Web Server"
+  vpc_id      = data.aws_vpc.default.id
+
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "web-sg-${var.project_prefix}"
+  }
+}
+
+# DB（RDS）用セキュリティグループ
+resource "aws_security_group" "db" {
+  name        = "db-sg-${var.project_prefix}"
+  description = "Security group for RDS Database"
+  vpc_id      = data.aws_vpc.default.id
+
+  # WebサーバーのSGからのみ MySQL(3306) アクセスを許可
+  ingress {
+    from_port       = 3306
+    to_port         = 3306
+    protocol        = "tcp"
+    security_groups = [aws_security_group.web.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "db-sg-${var.project_prefix}"
+  }
+}
+# ------------------------------------------------------------------------------
+# DB Subnet Group（デフォルトVPCのサブネットを使用）
+# ------------------------------------------------------------------------------
+
+resource "aws_db_subnet_group" "default" {
+  name       = "db-subnet-group-${var.project_prefix}"
+  subnet_ids = data.aws_subnets.default.ids
+
+  tags = {
+    Name = "db-subnet-group-${var.project_prefix}"
+  }
+}
+
+# ------------------------------------------------------------------------------
+# DB Parameter Group (SSLオフ・ホストブロック回避)
+# ------------------------------------------------------------------------------
+
+resource "aws_db_parameter_group" "main" {
+  name   = "rds-pg-${var.project_prefix}"
+  family = "mariadb10.11"
+
+  parameter {
+    name  = "require_secure_transport"
+    value = "OFF"
+  }
+
+  parameter {
+    name  = "max_connect_errors"
+    value = "10000"
+  }
+
+  tags = {
+    Name = "rds-pg-${var.project_prefix}"
+  }
+}
+
+# ------------------------------------------------------------------------------
+# RDS (MariaDB)
+# ------------------------------------------------------------------------------
+
+resource "aws_db_instance" "db" {
+  identifier            = "rds-mysql-${var.project_prefix}" # AWSコンソール上の識別名
+  allocated_storage     = 20
+  max_allocated_storage = 50
+  engine                = "mariadb"
+  engine_version        = "10.11"
+  instance_class        = "db.t3.micro"
+
+  db_name  = "sampledb"
+  username = "admin"
+  password = var.db_password
+
+  vpc_security_group_ids = [aws_security_group.db.id]
+
+  #DBサブネットグループとパラメータグループを適用
+  db_subnet_group_name   = aws_db_subnet_group.default.name
+  parameter_group_name   = aws_db_parameter_group.main.name
+
+  # インターネットからのパブリックアクセスを不可
+  publicly_accessible = false
+  skip_final_snapshot = true
+
+  tags = {
+    Name = "rds-mysql-${var.project_prefix}"
+  }
+}
+
+# ------------------------------------------------------------------------------
+# EC2
+# ------------------------------------------------------------------------------
+
+resource "aws_instance" "web" {
+  ami                    = data.aws_ami.amazonlinux.id
+  instance_type          = var.instance_type
+  subnet_id              = data.aws_subnets.default.ids[0]
+  vpc_security_group_ids = [aws_security_group.web.id]
+
+  # templatefile 関数を使って RDS の値を渡す
+  user_data = templatefile("${path.module}/userdata.tftpl", {
+    db_host      = aws_db_instance.db.address
+    db_name      = aws_db_instance.db.db_name
+    db_user      = aws_db_instance.db.username
+    db_pass      = var.db_password
+  })
+
+  tags = {
+    Name = "web-server-${var.project_prefix}"
+  }
+}
