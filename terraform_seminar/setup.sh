@@ -54,7 +54,8 @@ sudo apt install -y terraform
 ###Terraformのインストール・バージョン確認
 terraform -version
 
-
+#⑥AWS接続・認証状態の確認
+aws sts get-caller-identity
 
 # ==========================================================
 # アクセスキーの入力を求められるので、先ほどコピーした内容を元に次の通りに入力ください。
