@@ -24,6 +24,38 @@ aws --version
 #④AWS CLIでAWSへログイン
 aws configure
 
+# ------------------------------
+# 3-6. Terraformのインストール
+# ------------------------------
+
+#①インストール準備
+##パッケージ管理システムの更新
+sudo apt update
+
+##必要な前提ツールのインストール
+sudo apt install -y gnupg wget
+
+#②HashiCorp GPG鍵の取得と登録
+wget -O- https://apt.releases.hashicorp.com/gpg \
+| sudo gpg --dearmor \
+-o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+
+#③HashiCorp公式リポジトリの追加
+echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" \
+| sudo tee /etc/apt/sources.list.d/hashicorp.list
+
+#④Terraformのインストール
+##パッケージ管理システムの更新
+sudo apt update
+
+##Terraformのインストール
+sudo apt install -y terraform
+
+###Terraformのインストール・バージョン確認
+terraform -version
+
+
+
 # ==========================================================
 # アクセスキーの入力を求められるので、先ほどコピーした内容を元に次の通りに入力ください。
 # AWS Access Key ID [None]:アクセスキーIDを入力
